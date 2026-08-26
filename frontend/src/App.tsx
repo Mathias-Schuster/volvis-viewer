@@ -10,7 +10,12 @@ const VOL_WIDTH = 256;
 const VOL_HEIGHT = 256;
 const VOL_DEPTH = 256;
 
-function VolumeMesh() {
+interface VolumeMeshProps {
+  isoValue: number;
+  compositeMode: number;
+}
+
+function VolumeMesh({ isoValue, compositeMode }: VolumeMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const [volumeTex, setVolumeTex] = useState<THREE.Data3DTexture | null>(null);
 
@@ -19,9 +24,6 @@ function VolumeMesh() {
       try {
         const response = await fetch('http://localhost:8080/api/volume');
         const buffer = await response.arrayBuffer();
-
-        console.log("Exact byte length of fetched volume data:", buffer.byteLength);  // should be 256x256x256 = 16 777.216
-
         const data = new Uint8Array(buffer);
         const tex = new THREE.Data3DTexture(data, VOL_WIDTH, VOL_HEIGHT, VOL_DEPTH);
         tex.format = THREE.RedFormat;
@@ -42,11 +44,21 @@ function VolumeMesh() {
     volume: { value: volumeTex },
     scale: { value: new THREE.Vector3(1, 1, 1) },
     camera: { value: new THREE.Vector3(0, 0, 5) },
-    isoValue: { value: 0.2 },
+    isoValue: { value: isoValue },
     isoColor: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // Weiß
-    compositeMode: { value: 1 }, // 1 = ISO, 0 = MIP
+    compositeMode: { value: compositeMode },
     lightPosition: { value: new THREE.Vector3(10, 10, 10) }
   }), [volumeTex]);
+
+  useEffect(() => {
+    if (meshRef.current && meshRef.current.material) {
+      const material = meshRef.current.material as THREE.ShaderMaterial;
+      if (material.uniforms) {
+        material.uniforms.isoValue.value = isoValue;
+        material.uniforms.compositeMode.value = compositeMode;
+      }
+    }
+  }, [isoValue, compositeMode]);
 
   useFrame((state) => {
     if (meshRef.current && meshRef.current.material) {
@@ -76,6 +88,9 @@ function VolumeMesh() {
 function App() {
   const [serverMessage, setServerMessage] = useState<string>("Loading...");
 
+  const [isoValue, setIsoValue] = useState<number>(0.2);
+  const [compositeMode, setCompositeMode] = useState<number>(1);
+
   useEffect(() => {
     fetch('http://localhost:8080/api/status')
       .then(response => response.text())
@@ -86,13 +101,43 @@ function App() {
 
   return (
     <>
-      <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', zIndex: 1 }}>
-        <h2>Server Status: {serverMessage}</h2>
+      <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', zIndex: 1, background: 'rgba(0,0,0,0.6)', padding: '15px', borderRadius: '8px', minWidth: '200px' }}>
+        <h3 style={{ margin: '0 0 10 px 0', fontSize: '16px' }}>VolVis Viewer</h3>
+        <p style={{ margin: '0 0 15px 0', fontSize: '12px' }}>Server: {serverMessage}</p>
+        
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
+            Iso Value: {isoValue.toFixed(2)}
+          </label>
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01" 
+            value={isoValue} 
+            onChange={(e) => setIsoValue(parseFloat(e.target.value))}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
+            Render Mode:
+          </label>
+          <select 
+            value={compositeMode} 
+            onChange={(e) => setCompositeMode(parseInt(e.target.value))}
+            style={{ width: '100%', padding: '5px' }}
+          >
+            <option value={1}>ISO (Surface)</option>
+            <option value={0}>MIP (X-Ray)</option>
+          </select>
+        </div>
       </div>
       
       <Canvas camera={{ position: [0, 0, 5], fov: 75 }}>
         <OrbitControls />
-        <VolumeMesh />
+        <VolumeMesh isoValue={isoValue} compositeMode={compositeMode} />
       </Canvas>
     </>
   );
