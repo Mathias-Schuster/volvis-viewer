@@ -6,42 +6,61 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import vertexShader from './shaders/raycast.vert?raw';
 import fragmentShader from './shaders/raycast.frag?raw';
 
+const VOL_WIDTH = 256;
+const VOL_HEIGHT = 256;
+const VOL_DEPTH = 256;
+
 function VolumeMesh() {
   const meshRef = useRef<THREE.Mesh>(null);
-  const dummyVolume = useMemo(() => {
-    const size = 16;
-    const data = new Float32Array(size * size * size);
-    for (let i = 0; i < data.length; i++) {
-      data[i] = Math.random();
+  const [volumeTex, setVolumeTex] = useState<THREE.Data3DTexture | null>(null);
+
+  useEffect(() => {
+    async function fetchVolume() {
+      try {
+        const response = await fetch('http://localhost:8080/api/volume');
+        const buffer = await response.arrayBuffer();
+
+        console.log("Exact byte length of fetched volume data:", buffer.byteLength);  // should be 256x256x256 = 16 777.216
+
+        const data = new Uint8Array(buffer);
+        const tex = new THREE.Data3DTexture(data, VOL_WIDTH, VOL_HEIGHT, VOL_DEPTH);
+        tex.format = THREE.RedFormat;
+        tex.type = THREE.UnsignedByteType;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.unpackAlignment = 1;
+        tex.needsUpdate = true;
+        setVolumeTex(tex);
+      }
+      catch (error) {
+        console.error('Error fetching volume data:', error);
+      }
     }
-    const tex = new THREE.Data3DTexture(data, size, size, size);
-    tex.format = THREE.RedFormat;
-    tex.type = THREE.FloatType;
-    tex.minFilter = tex.magFilter = THREE.LinearFilter;
-    tex.unpackAlignment = 1;
-    tex.needsUpdate = true;
-    return tex;
+    fetchVolume();
   }, []);
 
   const uniforms = useMemo(() => ({
-    volume: { value: dummyVolume },
+    volume: { value: volumeTex },
     scale: { value: new THREE.Vector3(1, 1, 1) },
     camera: { value: new THREE.Vector3(0, 0, 5) },
-    isoValue: { value: 0.5 },
+    isoValue: { value: 0.2 },
     isoColor: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // Weiß
     compositeMode: { value: 1 }, // 1 = ISO, 0 = MIP
     lightPosition: { value: new THREE.Vector3(10, 10, 10) }
-  }), [dummyVolume]);
+  }), [volumeTex]);
 
   useFrame((state) => {
-    if (meshRef.current) {
+    if (meshRef.current && meshRef.current.material) {
       const material = meshRef.current.material as THREE.ShaderMaterial;
-      material.uniforms.camera.value.copy(state.camera.position);
+      if (material.uniforms && material.uniforms.camera) {
+        material.uniforms.camera.value.copy(state.camera.position);
+      }
     }
   });
 
+  if (!volumeTex) return null;
+
   return (
-    <mesh ref={meshRef}>
+    <mesh ref={meshRef} scale={[3, 3, 3]}>
       <boxGeometry args={[1, 1, 1]} />
       <shaderMaterial
         vertexShader={vertexShader}
@@ -71,7 +90,7 @@ function App() {
         <h2>Server Status: {serverMessage}</h2>
       </div>
       
-      <Canvas camera={{ position: [0, 0, 2], fov: 75 }}>
+      <Canvas camera={{ position: [0, 0, 5], fov: 75 }}>
         <OrbitControls />
         <VolumeMesh />
       </Canvas>

@@ -55,7 +55,8 @@ void main() {
     t_hit.x = max(t_hit.x, 0.0);
 
     // compute step size for ray marching
-    vec3 dt = 1.0 / (abs(rayDir) * volumeDimensions);
+    // vec3 dt = 1.0 / (abs(rayDir) * volumeDimensions);
+    vec3 dt = 1.0 / (abs(rayDir) * vec3(256.0, 256.0, 256.0));
     float stepSize = min(min(dt.x, dt.y), dt.z);
     vec3 rayStep = rayDir * stepSize;
 
