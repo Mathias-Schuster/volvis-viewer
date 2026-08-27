@@ -5,50 +5,33 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 
 import vertexShader from './shaders/raycast.vert?raw';
 import fragmentShader from './shaders/raycast.frag?raw';
+import Histogram from './components/Histogram';
 
 const VOL_WIDTH = 256;
 const VOL_HEIGHT = 256;
 const VOL_DEPTH = 256;
 
 interface VolumeMeshProps {
+  volumeTex: THREE.Data3DTexture | null;
   isoValue: number;
   compositeMode: number;
 }
 
-function VolumeMesh({ isoValue, compositeMode }: VolumeMeshProps) {
+function VolumeMesh({ volumeTex, isoValue, compositeMode }: VolumeMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const [volumeTex, setVolumeTex] = useState<THREE.Data3DTexture | null>(null);
 
-  useEffect(() => {
-    async function fetchVolume() {
-      try {
-        const response = await fetch('http://localhost:8080/api/volume');
-        const buffer = await response.arrayBuffer();
-        const data = new Uint8Array(buffer);
-        const tex = new THREE.Data3DTexture(data, VOL_WIDTH, VOL_HEIGHT, VOL_DEPTH);
-        tex.format = THREE.RedFormat;
-        tex.type = THREE.UnsignedByteType;
-        tex.minFilter = tex.magFilter = THREE.LinearFilter;
-        tex.unpackAlignment = 1;
-        tex.needsUpdate = true;
-        setVolumeTex(tex);
-      }
-      catch (error) {
-        console.error('Error fetching volume data:', error);
-      }
-    }
-    fetchVolume();
-  }, []);
-
-  const uniforms = useMemo(() => ({
-    volume: { value: volumeTex },
-    scale: { value: new THREE.Vector3(1, 1, 1) },
-    camera: { value: new THREE.Vector3(0, 0, 5) },
-    isoValue: { value: isoValue },
-    isoColor: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // Weiß
-    compositeMode: { value: compositeMode },
-    lightPosition: { value: new THREE.Vector3(10, 10, 10) }
-  }), [volumeTex]);
+  const uniforms = useMemo(() => {
+    if (!volumeTex) return null;
+    return {
+      volume: { value: volumeTex },
+      scale: { value: new THREE.Vector3(1, 1, 1) },
+      camera: { value: new THREE.Vector3(0, 0, 5) },
+      isoValue: { value: isoValue },
+      isoColor: { value: new THREE.Vector3(1.0, 1.0, 1.0) },
+      compositeMode: { value: compositeMode },
+      lightPosition: { value: new THREE.Vector3(10, 10, 10) }
+    };
+  }, [volumeTex]);
 
   useEffect(() => {
     if (meshRef.current && meshRef.current.material) {
@@ -69,7 +52,7 @@ function VolumeMesh({ isoValue, compositeMode }: VolumeMeshProps) {
     }
   });
 
-  if (!volumeTex) return null;
+  if (!uniforms) return null;
 
   return (
     <mesh ref={meshRef} scale={[3, 3, 3]}>
@@ -91,11 +74,37 @@ function App() {
   const [isoValue, setIsoValue] = useState<number>(0.2);
   const [compositeMode, setCompositeMode] = useState<number>(1);
 
+  const [rawData, setRawData] = useState<Uint8Array | null>(null);
+  const [volumeTex, setVolumeTex] = useState<THREE.Data3DTexture | null>(null);
+
   useEffect(() => {
     fetch('http://localhost:8080/api/status')
       .then(response => response.text())
       .then(data => setServerMessage(data))
       .catch(error => setServerMessage(`Error: ${error.message}`));
+  }, []);
+
+    useEffect(() => {
+    async function fetchVolume() {
+      try {
+        const response = await fetch('http://localhost:8080/api/volume');
+        const buffer = await response.arrayBuffer();
+        const data = new Uint8Array(buffer);
+        const tex = new THREE.Data3DTexture(data, VOL_WIDTH, VOL_HEIGHT, VOL_DEPTH);
+        tex.format = THREE.RedFormat;
+        tex.type = THREE.UnsignedByteType;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.unpackAlignment = 1;
+        tex.needsUpdate = true;
+
+        setRawData(data);
+        setVolumeTex(tex);
+      }
+      catch (error) {
+        console.error('Error fetching volume data:', error);
+      }
+    }
+    fetchVolume();
   }, []);
 
 
@@ -133,11 +142,19 @@ function App() {
             <option value={0}>MIP (X-Ray)</option>
           </select>
         </div>
+
+        {rawData && (
+          <Histogram 
+            volumeData={rawData} 
+            isoValue={isoValue} 
+            setIsoValue={setIsoValue} 
+          />
+        )}
       </div>
       
       <Canvas camera={{ position: [0, 0, 5], fov: 75 }}>
         <OrbitControls />
-        <VolumeMesh isoValue={isoValue} compositeMode={compositeMode} />
+        <VolumeMesh volumeTex={volumeTex} isoValue={isoValue} compositeMode={compositeMode} />
       </Canvas>
     </>
   );
