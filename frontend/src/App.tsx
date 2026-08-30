@@ -11,6 +11,28 @@ const VOL_WIDTH = 256;
 const VOL_HEIGHT = 256;
 const VOL_DEPTH = 256;
 
+function createTransferFunction() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  
+  if (ctx) {
+    const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+    gradient.addColorStop(0.0, "rgba(0, 0, 0, 0.0)");       // air (transparent)
+    gradient.addColorStop(0.1, "rgba(200, 50, 50, 0.05)");  // soft tissue (transparent red)
+    gradient.addColorStop(0.3, "rgba(255, 220, 200, 0.2)"); // cartilage (beige)
+    gradient.addColorStop(0.6, "rgba(255, 255, 255, 0.8)"); // hard bone (opaque white)
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 256, 1);
+  }
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = texture.magFilter = THREE.LinearFilter;
+  return texture;
+}
+
 interface VolumeMeshProps {
   volumeTex: THREE.Data3DTexture | null;
   isoValue: number;
@@ -24,6 +46,7 @@ function VolumeMesh({ volumeTex, isoValue, compositeMode }: VolumeMeshProps) {
     if (!volumeTex) return null;
     return {
       volume: { value: volumeTex },
+      transferFunction: { value: createTransferFunction() },
       scale: { value: new THREE.Vector3(1, 1, 1) },
       camera: { value: new THREE.Vector3(0, 0, 5) },
       isoValue: { value: isoValue },
@@ -138,6 +161,7 @@ function App() {
             onChange={(e) => setCompositeMode(parseInt(e.target.value))}
             style={{ width: '100%', padding: '5px' }}
           >
+            <option value={2}>DVR (Transfer Function)</option>
             <option value={1}>ISO (Surface)</option>
             <option value={0}>MIP (X-Ray)</option>
           </select>

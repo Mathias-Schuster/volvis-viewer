@@ -7,6 +7,7 @@ uniform float isoValue;
 uniform vec3 isoColor;
 uniform int compositeMode; // 0: MIP, 1: ISO
 uniform vec3 lightPosition;
+uniform sampler2D transferFunction;
 
 out vec4 FragColor;
 
@@ -120,6 +121,16 @@ void main() {
                 break;
             }
             previous = current;
+        }
+        // for DVR (transferFunction)
+        else if (compositeMode == 2) {
+            vec4 tfColor = texture(transferFunction, vec2(current, 0.5));
+            color += (1.0 - alpha) * tfColor.rgb * tfColor.a;
+            alpha += (1.0 - alpha) * tfColor.a;
+            
+            if (alpha >= 0.99) {
+                break;
+            }
         }
     }
 
