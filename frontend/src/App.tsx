@@ -11,42 +11,27 @@ const VOL_WIDTH = 256;
 const VOL_HEIGHT = 256;
 const VOL_DEPTH = 256;
 
-function createTransferFunction() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 1;
-  const ctx = canvas.getContext('2d');
-  
-  if (ctx) {
-    const gradient = ctx.createLinearGradient(0, 0, 256, 0);
-    gradient.addColorStop(0.0, "rgba(0, 0, 0, 0.0)");       // air (transparent)
-    gradient.addColorStop(0.1, "rgba(200, 50, 50, 0.05)");  // soft tissue (transparent red)
-    gradient.addColorStop(0.3, "rgba(255, 220, 200, 0.2)"); // cartilage (beige)
-    gradient.addColorStop(0.6, "rgba(255, 255, 255, 0.8)"); // hard bone (opaque white)
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 256, 1);
-  }
-  
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = texture.magFilter = THREE.LinearFilter;
-  return texture;
+export interface ControlPoint {
+  x: number;  // density (0.0 - 1.0)
+  alpha: number;
+  color: string;
 }
 
 interface VolumeMeshProps {
   volumeTex: THREE.Data3DTexture | null;
   isoValue: number;
   compositeMode: number;
+  transferFunctionTex: THREE.CanvasTexture | null;
 }
 
-function VolumeMesh({ volumeTex, isoValue, compositeMode }: VolumeMeshProps) {
+function VolumeMesh({ volumeTex, isoValue, compositeMode, transferFunctionTex }: VolumeMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   const uniforms = useMemo(() => {
-    if (!volumeTex) return null;
+    if (!volumeTex || !transferFunctionTex) return null;
     return {
       volume: { value: volumeTex },
-      transferFunction: { value: createTransferFunction() },
+      transferFunction: { value: transferFunctionTex },
       scale: { value: new THREE.Vector3(1, 1, 1) },
       camera: { value: new THREE.Vector3(0, 0, 5) },
       isoValue: { value: isoValue },
@@ -54,7 +39,7 @@ function VolumeMesh({ volumeTex, isoValue, compositeMode }: VolumeMeshProps) {
       compositeMode: { value: compositeMode },
       lightPosition: { value: new THREE.Vector3(10, 10, 10) }
     };
-  }, [volumeTex]);
+  }, [volumeTex, transferFunctionTex, isoValue, compositeMode]);
 
   useEffect(() => {
     if (meshRef.current && meshRef.current.material) {
@@ -95,10 +80,48 @@ function App() {
   const [serverMessage, setServerMessage] = useState<string>("Loading...");
 
   const [isoValue, setIsoValue] = useState<number>(0.2);
+  const [controlPoints, setControlPoints] = useState<ControlPoint[]>([
+    { x: 0.0, alpha: 0.0, color: '#000000' },
+    { x: 0.15, alpha: 0.1, color: '#ff4444' },  // soft tissue
+    { x: 0.6, alpha: 0.8, color: '#ffffff' },   // bone
+    { x: 1.0, alpha: 0.8, color: '#ffffff' }
+  ]);
+
   const [compositeMode, setCompositeMode] = useState<number>(1);
 
   const [rawData, setRawData] = useState<Uint8Array | null>(null);
   const [volumeTex, setVolumeTex] = useState<THREE.Data3DTexture | null>(null);
+
+  const transferFunctionTex = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    
+    if (ctx) {
+      const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+      
+      controlPoints.forEach(pt => {
+        ctx.fillStyle = pt.color;
+        ctx.fillRect(0,0,0,0); // trigger canvas parser
+        
+        // convert hex string to individual rgb values
+        const hex = pt.color.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        
+        gradient.addColorStop(pt.x, `rgba(${r}, ${g}, ${b}, ${pt.alpha})`);
+      });
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 256, 1);
+    }
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = texture.magFilter = THREE.LinearFilter;
+    return texture;
+  }, [controlPoints]);
 
   useEffect(() => {
     fetch('http://localhost:8080/api/status')
@@ -107,7 +130,7 @@ function App() {
       .catch(error => setServerMessage(`Error: ${error.message}`));
   }, []);
 
-    useEffect(() => {
+  useEffect(() => {
     async function fetchVolume() {
       try {
         const response = await fetch('http://localhost:8080/api/volume');
@@ -137,20 +160,22 @@ function App() {
         <h3 style={{ margin: '0 0 10 px 0', fontSize: '16px' }}>VolVis Viewer</h3>
         <p style={{ margin: '0 0 15px 0', fontSize: '12px' }}>Server: {serverMessage}</p>
         
-        <div style={{ marginBottom: '15px' }}>
-          <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
-            Iso Value: {isoValue.toFixed(2)}
-          </label>
-          <input 
-            type="range" 
-            min="0" 
-            max="1" 
-            step="0.01" 
-            value={isoValue} 
-            onChange={(e) => setIsoValue(parseFloat(e.target.value))}
-            style={{ width: '100%' }}
-          />
-        </div>
+        {compositeMode === 1 && (
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
+              Iso Value: {isoValue.toFixed(2)}
+            </label>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.01" 
+              value={isoValue} 
+              onChange={(e) => setIsoValue(parseFloat(e.target.value))}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
 
         <div>
           <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
@@ -172,13 +197,16 @@ function App() {
             volumeData={rawData} 
             isoValue={isoValue} 
             setIsoValue={setIsoValue} 
+            controlPoints={controlPoints}
+            setControlPoints={setControlPoints}
+            compositeMode={compositeMode}
           />
         )}
       </div>
       
       <Canvas camera={{ position: [0, 0, 5], fov: 75 }}>
         <OrbitControls />
-        <VolumeMesh volumeTex={volumeTex} isoValue={isoValue} compositeMode={compositeMode} />
+        <VolumeMesh volumeTex={volumeTex} isoValue={isoValue} compositeMode={compositeMode} transferFunctionTex={transferFunctionTex} />
       </Canvas>
     </>
   );
